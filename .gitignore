@@ -33,4 +33,7 @@
 /.vs/wow64pp/v15
 /.vs
 /.idea
+/.vscode
+/.xmake
+/build
 /cmake-build-debug

@@ -1,15 +1,23 @@
-#define CATCH_CONFIG_MAIN
-#include "Catch/single_include/catch.hpp"
+#include <gtest/gtest.h>
+#include <windows.h>
+#include <xorstr/xorstr.hpp>
+#define XORSTR(x) xorstr_(x)
 #include <wow64pp.hpp>
-#include <winternl.h>
 
+using ::testing::EmptyTestEventListener;
+using ::testing::InitGoogleTest;
+using ::testing::Test;
+using ::testing::TestEventListeners;
+using ::testing::TestInfo;
+using ::testing::TestPartResult;
+using ::testing::UnitTest;
 
-TEST_CASE ("test")
+TEST(WOW64PP, NtReadVirtualMemory)
 {
-    auto            ntdll = wow64pp::module_handle ("ntdll.dll");
+    auto ntdll = wow64pp::module_handle ("ntdll.dll");
     std::error_code ec;
     auto            fn = wow64pp::import (ntdll, "NtReadVirtualMemory", ec);
-    REQUIRE (!ec);
+    EXPECT_TRUE(!ec);
     auto h = wow64pp::detail::self_handle ();
 
     volatile int  i = 6;
@@ -23,9 +31,15 @@ TEST_CASE ("test")
 
         for (int j = 0; j < 200; ++j) {
             auto ret = wow64pp::call_function (fn, h, &i, &b, 4, &read);
-            CHECK (ret >= 0);
-            CHECK (i == b);
-            REQUIRE (read == 4);
+            EXPECT_TRUE (ret >= 0);
+            EXPECT_TRUE (i == b);
+            EXPECT_TRUE (read == 4);
         }
     }
+
+}
+int main(int argc, char** argv)
+{
+  InitGoogleTest(&argc, argv);
+  return RUN_ALL_TESTS();
 }

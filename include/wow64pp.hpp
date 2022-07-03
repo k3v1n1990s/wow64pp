@@ -20,7 +20,9 @@
 #include <system_error>
 #include <memory>
 #include <cstring> // memcpy
-
+#ifndef XORSTR
+#define XORSTR(x) x
+#endif
 namespace wow64pp {
 
     namespace defs {
@@ -175,11 +177,10 @@ namespace wow64pp {
         };
 
     } // namespace defs
-
     namespace detail {
-
         constexpr static auto image_directory_entry_export = 0;
         constexpr static auto ordinal_not_found            = 0xC0000138;
+#if !defined(_MSC_VER)
 
         typedef int(__stdcall* FARPROC)();
 
@@ -204,7 +205,10 @@ namespace wow64pp {
         __declspec(dllimport) FARPROC
             __stdcall GetProcAddress(void* hModule, const char* lpProcName);
         }
-
+        #define APINS detail
+#else
+        #define APINS
+#endif
         inline std::error_code get_last_error() noexcept
         {
             return std::error_code(static_cast<int>(GetLastError()),
@@ -236,7 +240,7 @@ namespace wow64pp {
                                 0,
                                 0,
                                 0x00000002) == 0) // DUPLICATE_SAME_ACCESS
-                throw_last_error("failed to duplicate current process handle");
+                throw_last_error(XORSTR("failed to duplicate current process handle"));
 
             return h;
         }
@@ -261,7 +265,7 @@ namespace wow64pp {
         {
             const auto addr = GetModuleHandleA(name);
             if (addr == nullptr)
-                throw_last_error("GetModuleHandleA() failed");
+                throw_last_error(XORSTR("GetModuleHandleA() failed"));
 
             return addr;
         }
@@ -280,11 +284,11 @@ namespace wow64pp {
         template<typename F>
         inline F native_ntdll_function(const char* name)
         {
-            const static auto ntdll_addr = native_module_handle("ntdll.dll");
-            auto f = reinterpret_cast<F>(detail::GetProcAddress(ntdll_addr, name));
+            const static auto ntdll_addr = native_module_handle(XORSTR("ntdll.dll"));
+            auto f = reinterpret_cast<F>(APINS::GetProcAddress(reinterpret_cast<HMODULE>(ntdll_addr), name));
 
             if (f == nullptr)
-                throw_last_error("failed to get address of ntdll function");
+                throw_last_error(XORSTR("failed to get address of ntdll function"));
 
             return f;
         }
@@ -293,12 +297,12 @@ namespace wow64pp {
         inline F native_ntdll_function(const char*      name,
                                        std::error_code& ec) noexcept
         {
-            const auto ntdll_addr = native_module_handle("ntdll.dll", ec);
+            const auto ntdll_addr = native_module_handle(XORSTR("ntdll.dll"), ec);
             if (ec)
                 return nullptr;
 
             const auto f =
-                reinterpret_cast<F>(detail::GetProcAddress(ntdll_addr, name));
+                reinterpret_cast<F>(APINS::GetProcAddress(reinterpret_cast<HMODULE>(ntdll_addr), name));
 
             if (f == nullptr)
                 ec = detail::get_last_error();
@@ -311,7 +315,7 @@ namespace wow64pp {
         {
             const static auto NtWow64QueryInformationProcess64 =
                 native_ntdll_function<defs::NtQueryInformationProcessT>(
-                    "NtWow64QueryInformationProcess64");
+                    XORSTR("NtWow64QueryInformationProcess64"));
 
             defs::PROCESS_BASIC_INFORMATION_64 pbi;
             const auto                         hres =
@@ -321,7 +325,7 @@ namespace wow64pp {
                                                  &pbi,
                                                  sizeof(pbi),
                                                  nullptr);
-            throw_if_failed("NtWow64QueryInformationProcess64() failed", hres);
+            throw_if_failed(XORSTR("NtWow64QueryInformationProcess64() failed"), hres);
 
             return pbi.PebBaseAddress;
         }
@@ -330,7 +334,7 @@ namespace wow64pp {
         {
             const auto NtWow64QueryInformationProcess64 =
                 native_ntdll_function<defs::NtQueryInformationProcessT>(
-                    "NtWow64QueryInformationProcess64", ec);
+                    XORSTR("NtWow64QueryInformationProcess64"), ec);
             if (ec)
                 return 0;
 
@@ -353,7 +357,7 @@ namespace wow64pp {
         inline void
         read_memory(std::uint64_t address, P* buffer, std::size_t size = sizeof(P))
         {
-            if (address < std::numeric_limits<std::uint32_t>::max()) {
+            if (address < (std::numeric_limits<std::uint32_t>::max)()) {
                 std::memcpy(buffer,
                             reinterpret_cast<const void*>(
                                 static_cast<std::uint32_t>(address)),
@@ -363,13 +367,13 @@ namespace wow64pp {
 
             const static auto NtWow64ReadVirtualMemory64 =
                 native_ntdll_function<defs::NtWow64ReadVirtualMemory64T>(
-                    "NtWow64ReadVirtualMemory64");
+                    XORSTR("NtWow64ReadVirtualMemory64"));
 
             HANDLE h_self = self_handle();
             auto   hres =
                 NtWow64ReadVirtualMemory64(h_self, address, buffer, size, nullptr);
             CloseHandle(h_self);
-            throw_if_failed("NtWow64ReadVirtualMemory64() failed", hres);
+            throw_if_failed(XORSTR("NtWow64ReadVirtualMemory64() failed"), hres);
         }
 
         template<typename P>
@@ -378,7 +382,7 @@ namespace wow64pp {
                                 std::size_t      size,
                                 std::error_code& ec) noexcept
         {
-            if (address < std::numeric_limits<std::uint32_t>::max()) {
+            if (address < (std::numeric_limits<std::uint32_t>::max)()) {
                 std::memcpy(buffer,
                             reinterpret_cast<const void*>(
                                 static_cast<std::uint32_t>(address)),
@@ -388,7 +392,7 @@ namespace wow64pp {
 
             const auto NtWow64ReadVirtualMemory64 =
                 native_ntdll_function<defs::NtWow64ReadVirtualMemory64T>(
-                    "NtWow64ReadVirtualMemory64", ec);
+                    XORSTR("NtWow64ReadVirtualMemory64"), ec);
             if (ec)
                 return;
 
@@ -470,7 +474,7 @@ namespace wow64pp {
 
         throw std::system_error(
             std::error_code(detail::ordinal_not_found, std::system_category()),
-            "Could not get x64 module handle");
+            XORSTR("Could not get x64 module handle"));
     }
 
     /** \brief An equalient of winapi GetModuleHandle function.
@@ -544,7 +548,7 @@ namespace wow64pp {
 
             if (idd_virtual_addr == 0)
                 throw std::runtime_error(
-                    "IMAGE_EXPORT_DIRECTORY::VirtualAddress was 0");
+                    XORSTR("IMAGE_EXPORT_DIRECTORY::VirtualAddress was 0"));
 
             return read_memory<defs::IMAGE_EXPORT_DIRECTORY>(ntdll_base +
                                                              idd_virtual_addr);
@@ -577,7 +581,7 @@ namespace wow64pp {
 
         inline std::uint64_t ldr_procedure_address()
         {
-            const static auto ntdll_base = module_handle("ntdll.dll");
+            const static auto ntdll_base = module_handle(XORSTR("ntdll.dll"));
 
             const auto ied = image_export_dir(ntdll_base);
 
@@ -598,7 +602,7 @@ namespace wow64pp {
                         name_table.get(),
                         sizeof(unsigned long) * ied.NumberOfNames);
 
-            const std::string to_find("LdrGetProcedureAddress");
+            const std::string to_find(XORSTR("LdrGetProcedureAddress"));
             std::string       buffer = to_find;
 
             const std::size_t n =
@@ -613,12 +617,12 @@ namespace wow64pp {
 
             throw std::system_error(
                 std::error_code(ordinal_not_found, std::system_category()),
-                "could find x64 LdrGetProcedureAddress()");
+                XORSTR("could find x64 LdrGetProcedureAddress()"));
         }
 
         inline std::uint64_t ldr_procedure_address(std::error_code& ec)
         {
-            const static auto ntdll_base = module_handle("ntdll.dll", ec);
+            const static auto ntdll_base = module_handle(XORSTR("ntdll.dll"), ec);
             if (ec)
                 return 0;
 
@@ -652,7 +656,7 @@ namespace wow64pp {
             if (ec)
                 return 0;
 
-            const std::string to_find("LdrGetProcedureAddress");
+            const std::string to_find(XORSTR("LdrGetProcedureAddress"));
             std::string       buffer;
             buffer.resize(to_find.size());
 
@@ -749,11 +753,11 @@ namespace wow64pp {
         // MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE
         if (!allocated_shellcode) {
             allocated_shellcode =
-                VirtualAlloc(nullptr, sizeof(shellcode), 0x00001000 | 0x00002000, 0x40);
+                APINS::VirtualAlloc(nullptr, sizeof(shellcode), 0x00001000 | 0x00002000, 0x40);
 
             if (!allocated_shellcode)
                 detail::throw_last_error(
-                    "VirtualAlloc failed to allocate memory for call_function shellcode");
+                    XORSTR("VirtualAlloc failed to allocate memory for call_function shellcode"));
 
             std::memcpy(allocated_shellcode, shellcode, sizeof(shellcode));
         }
@@ -810,7 +814,7 @@ namespace wow64pp {
         if (fn_ret)
             throw std::system_error(
                 std::error_code(static_cast<int>(fn_ret), std::system_category()),
-                "call_function(ldr_procedure_address_base...) failed");
+                XORSTR("call_function(ldr_procedure_address_base...) failed"));
 
         return ret;
     }
